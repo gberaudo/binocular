@@ -40,7 +40,7 @@ def handle_push(json):
     try:
         output = subprocess.check_output(['scripts/handle_push.sh', git_url, directory, sha], stderr=subprocess.STDOUT)
     except subprocess.CalledProcessError as e:
-        output = 'Error ' + e.output
+        output = b'Error ' + e.output
 
     with open("branches/%s/%s.logs" % (directory, sha), "wb") as log_file:
         log_file.write(output)
