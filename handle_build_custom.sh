@@ -6,4 +6,9 @@ set -e
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 directory="$1"
 
-echo "TODO: handle build"
+cd $directory
+git submodule update --recursive --init
+cd -
+
+CLONE="/home/nonroot/clone"
+docker build -t binocular docker && docker run -v $DIR/$directory:$CLONE -w $CLONE --rm -it binocular ../build.sh
