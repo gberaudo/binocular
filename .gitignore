@@ -1,0 +1,6 @@
+.venv
+key
+key.pub
+.*_timestamp
+config.ini
+branches/*
