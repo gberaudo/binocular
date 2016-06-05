@@ -1,5 +1,6 @@
 .venv/bin/python3 .venv/bin/pip:
 	pyvenv .venv
+	.venv/bin/pip install wheel
 
 .venv/bin/flake8: .requirements_timestamp
 
@@ -8,7 +9,7 @@
 	@touch $@
 
 flake8: .venv/bin/flake8
-	.venv/bin/flake8 --ignore=E702,E402,E302 --max-line-length=120 server.py
+	.venv/bin/flake8 --ignore=E702,E402,E302 --max-line-length=130 server.py
 
 .PHONY:
 run: .requirements_timestamp flake8 config.ini .key_configured_timestamp .configured_timestamp
@@ -38,3 +39,7 @@ config.ini: .venv/bin/python3
 .PHONY:
 clean:
 	rm .*_timestamp
+
+.PHONY:
+cleanall: clean
+	rm -rf .venv

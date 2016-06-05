@@ -1,3 +1,5 @@
+wheel
 bottle
 flake8
 ipdb
+git+https://github.com/gberaudo/ansi2html.git@fix_single_line_with_cursor_move_up

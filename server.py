@@ -2,11 +2,17 @@ import subprocess
 from bottle import run, request, response, route, static_file
 from multiprocessing import Process, get_logger
 
+from ansi2html import Ansi2HTMLConverter
+
 import hashlib
 import hmac
 import os
+import fcntl
+import time
 import configparser
 
+
+SCRIPT_DIRNAME = os.path.dirname(os.path.realpath(__file__))
 
 config = configparser.ConfigParser()
 config.read('config.ini')
@@ -82,11 +88,49 @@ def main():
     return "\n".join(branches)
 
 
-script_dirname = os.path.dirname(os.path.realpath(__file__))
+conv = Ansi2HTMLConverter()
+def read_continuously(filename, delay=0.5, timeout=120, to_html=False):
+    with open(filename, 'r') as f:
+        fd = f.fileno()
+        flag = fcntl.fcntl(fd, fcntl.F_GETFD)
+        fcntl.fcntl(fd, fcntl.F_SETFL, flag | os.O_NONBLOCK)
+        previous_tick = time.monotonic()
+        if to_html:
+            yield('<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd">')
+            yield('<html><head><meta http-equiv="Content-Type" content="text/html; charset=utf-8">')
+            yield(conv.produce_headers())
+            yield('<body class="body_foreground body_background" style="font-size: normal;" ><pre class="ansi2html-content">')
+            yield('')
+        while True:
+            current_tick = time.monotonic()
+            if current_tick - previous_tick > timeout:  # in seconds
+                return
+            new = f.readline()
+            if new:
+                if to_html:
+                    yield(conv.convert(new, full=False))
+                else:
+                    yield(new)
+            else:
+                time.sleep(delay)  # in seconds
+        if to_html:
+            yield('</pre> </body> </html>')
+
+
+@route('/stream/<filepath:path>')
+def stream(filepath):
+    osfilepath = '%s/branches/%s' % (SCRIPT_DIRNAME, filepath)
+    if '..' in filepath or not os.path.isfile(osfilepath):
+        response.status = '404 Not Found'
+        return response
+
+    return read_continuously(osfilepath, to_html=True)
+
+
 @route('/branches/<filepath:path>')
 def server_static(filepath):
     if SERVE_BRANCHES:
-        return static_file(filepath, root='%s/branches' % script_dirname)
+        return static_file(filepath, root='%s/branches' % SCRIPT_DIRNAME)
     else:
         response.status = '403 Unauthorized'
         return {"error": "No statics configured"}
