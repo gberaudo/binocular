@@ -43,15 +43,14 @@ def handle_push(json):
     directory = sanitize(ref)
     git_url = json['repository']['ssh_url']
     log.info('Handling push for %s %s -> %s %s', git_url, ref, directory, sha)
-    try:
-        output = subprocess.check_output(['scripts/handle_push.sh', git_url, directory, sha], stderr=subprocess.STDOUT)
-    except subprocess.CalledProcessError as e:
-        output = b'Error ' + e.output
 
-    with open("branches/%s/%s.logs" % (directory, sha), "wb") as log_file:
-        log_file.write(output)
-
-    log.error(output)
+    filename = "logs/%s.log" % sha
+    open(filename, 'a').close()  # create file
+    with open(filename, "wb") as log_file:
+        try:
+            subprocess.Popen(['scripts/handle_push.sh', git_url, directory, sha], stdout=log_file, stderr=subprocess.STDOUT)
+        except:
+            log.exception('Error in handle_push')
 
 
 @route('/events', method='POST')
@@ -117,10 +116,10 @@ def read_continuously(filename, delay=0.5, timeout=120, to_html=False):
             yield('</pre> </body> </html>')
 
 
-@route('/stream/<filepath:path>')
-def stream(filepath):
-    osfilepath = '%s/branches/%s' % (SCRIPT_DIRNAME, filepath)
-    if '..' in filepath or not os.path.isfile(osfilepath):
+@route('/logs/<filename>')
+def stream(filename):
+    osfilepath = '%s/logs/%s' % (SCRIPT_DIRNAME, filename)
+    if not os.path.isfile(osfilepath):
         response.status = '404 Not Found'
         return response
 
