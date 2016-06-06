@@ -4,3 +4,4 @@ key.pub
 .*_timestamp
 config.ini
 branches/*
+logs/*.log

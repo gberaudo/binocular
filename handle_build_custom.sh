@@ -11,4 +11,4 @@ git submodule update --recursive --init
 cd -
 
 CLONE="/home/nonroot/clone"
-docker build -t binocular docker && docker run -v $DIR/$directory:$CLONE -w $CLONE --rm -it binocular ../build.sh
+docker build -t binocular docker && docker run -v $DIR/$directory:$CLONE -w $CLONE --rm -t binocular ../build.sh

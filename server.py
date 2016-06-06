@@ -1,5 +1,5 @@
 import subprocess
-from bottle import run, request, response, route, static_file
+from bottle import run, request, response, route, static_file, template
 from multiprocessing import Process, get_logger
 
 from ansi2html import Ansi2HTMLConverter
@@ -10,6 +10,7 @@ import os
 import fcntl
 import time
 import configparser
+import html
 
 
 SCRIPT_DIRNAME = os.path.dirname(os.path.realpath(__file__))
@@ -82,38 +83,42 @@ def events():
 
 @route('/')
 def main():
-    branches = os.listdir('branches')
-    print(branches)
-    return "\n".join(branches)
+    dir_branches = next(os.walk('branches'))[1]
+    branches = []
+    for dir_branch in dir_branches:
+        dir_shas = next(os.walk('branches/%s' % dir_branch))[1]
+        shas = [{
+            'name': s,
+            'date': os.path.getmtime('branches/%s/%s' % (dir_branch, s))
+        } for s in dir_shas]
+
+        branches.append({'name': dir_branch, 'shas': shas})
+    return template("templates/list_branches_and_sha", branches=branches)
 
 
 conv = Ansi2HTMLConverter()
-def read_continuously(filename, delay=0.5, timeout=120, to_html=False):
+def read_continuously(filename, delay=0.5, timeout=120, to_html=False, sanitize=False):
     with open(filename, 'r') as f:
         fd = f.fileno()
         flag = fcntl.fcntl(fd, fcntl.F_GETFD)
         fcntl.fcntl(fd, fcntl.F_SETFL, flag | os.O_NONBLOCK)
         previous_tick = time.monotonic()
-        if to_html:
-            yield('<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd">')
-            yield('<html><head><meta http-equiv="Content-Type" content="text/html; charset=utf-8">')
-            yield(conv.produce_headers())
-            yield('<body class="body_foreground body_background" style="font-size: normal;" ><pre class="ansi2html-content">')
-            yield('')
         while True:
             current_tick = time.monotonic()
             if current_tick - previous_tick > timeout:  # in seconds
                 return
+
             new = f.readline()
             if new:
+                previous_tick = current_tick
                 if to_html:
+                    if sanitize:
+                        new = html.escape(new)
                     yield(conv.convert(new, full=False))
                 else:
                     yield(new)
             else:
                 time.sleep(delay)  # in seconds
-        if to_html:
-            yield('</pre> </body> </html>')
 
 
 @route('/logs/<filename>')
@@ -123,11 +128,30 @@ def stream(filename):
         response.status = '404 Not Found'
         return response
 
-    return read_continuously(osfilepath, to_html=True)
+    main_generator = read_continuously(osfilepath, to_html=True, sanitize=False, timeout=122)
+
+    def full_generator():
+            yield('<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd">')
+            yield('<html><head><meta http-equiv="Content-Type" content="text/html; charset=utf-8">')
+            yield(conv.produce_headers())
+            yield('<body class="body_foreground body_background" style="font-size: normal;" ><pre class="ansi2html-content">')
+            for line in main_generator:
+                yield(line)
+            yield('</pre> </body> </html>')
+
+    if request.query.get('embed') is None:
+        return full_generator()
+    else:
+        return main_generator
+
+
+@route('/static/<filepath:path>')
+def serve_static(filepath):
+    return static_file(filepath, root='%s/static' % SCRIPT_DIRNAME)
 
 
 @route('/branches/<filepath:path>')
-def server_static(filepath):
+def serve_branches(filepath):
     if SERVE_BRANCHES:
         return static_file(filepath, root='%s/branches' % SCRIPT_DIRNAME)
     else:
@@ -135,4 +159,9 @@ def server_static(filepath):
         return {"error": "No statics configured"}
 
 
-run(host='0.0.0.0', port=8080, debug=DEBUG)
+@route('/status/<branch>/<sha>')
+def status(branch, sha):
+    return template("templates/status.tpl", branch=branch, sha=sha)
+
+
+run(host='0.0.0.0', server="paste", port=8080, debug=DEBUG)
