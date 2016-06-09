@@ -22,12 +22,15 @@ let	logs = document.getElementById('logs');
 oReq.onreadystatechange = function() {
     if (this.readyState >= 3 && this.status == 200) {
         let response = this.responseText;
-        logs.innerHTML = logs.innerHTML + response;
+        logs.insertAdjacentHTML('beforeend',response);
+        //logs.innerHTML = logs.innerHTML + response;
         if (active) follow();
     }
 }
 oReq.open("get", "/logs/{{sha}}.log?embed", true);
 oReq.send();
+
+document.addEventListener('wheel', a => { active = false; });
 </script>
 
 <!--
