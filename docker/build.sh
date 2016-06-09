@@ -1,7 +1,12 @@
 #!/bin/sh
 
-owner=`stat -c '%u:%g' .git`
+set -e -x
 
-chown -R nonroot:nonroot .
-su nonroot -c "make dist; make check; make dist-examples; make dist-apidoc"
-chown -R $owner .
+chmod 777 /build
+groupadd -g ${GROUP_ID} binocular
+useradd --shell /bin/bash --uid ${USER_ID} --gid ${GROUP_ID} binocular
+
+su binocular -c "make dist"
+su binocular -c "make check"
+su binocular -c "make dist-examples"
+su binocular -c "make dist-apidoc"
