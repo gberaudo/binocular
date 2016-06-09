@@ -22,6 +22,7 @@ EVENT_AUTH = config.get('main', 'event_auth')
 EVENT_SECRET = config.get('main', 'event_secret')
 DEBUG = config.getboolean('main', 'debug', fallback=False)
 SERVE_BRANCHES = config.getboolean('main', 'serve_branches', fallback=False)
+HANDLE_PUSH_TIMEOUT = config.getint('main', 'handle_push_timeout', fallback=600)
 
 
 def compare_event_signature():
@@ -37,6 +38,21 @@ def sanitize(str):
     return "".join(c for c in str if c.isalnum() or c in keepcharacters)
 
 
+def write_status(status, sha):
+    assert status in ['failed', 'pending', 'success']
+    status_filename = "branches/%s.status" % sha
+    with open(status_filename, "w") as status_file:
+        status_file.write(status)
+
+
+def read_status(sha):
+    status_filename = "branches/%s.status" % sha
+    with open(status_filename, "r") as status_file:
+        status = status_file.read()
+    assert status in ['failed', 'pending', 'success']
+    return status
+
+
 def handle_push(json):
     log = get_logger()
     ref = json['ref'].rsplit('/', 1)[-1]  # refs/heads/branch
@@ -45,13 +61,22 @@ def handle_push(json):
     git_url = json['repository']['ssh_url']
     log.info('Handling push for %s %s -> %s %s', git_url, ref, directory, sha)
 
+    write_status('pending', sha)
+
     filename = "logs/%s.log" % sha
     open(filename, 'a').close()  # create file
     with open(filename, "wb") as log_file:
         try:
-            subprocess.Popen(['scripts/handle_push.sh', git_url, directory, sha], stdout=log_file, stderr=subprocess.STDOUT)
+            return_code = subprocess.call(
+                ['scripts/handle_push.sh', git_url, directory, sha],
+                stdout=log_file, stderr=subprocess.STDOUT,
+                timeout=HANDLE_PUSH_TIMEOUT)
+            if return_code == 0:
+                write_status('success', sha)
+                return
         except:
             log.exception('Error in handle_push')
+    write_status('failed', sha)
 
 
 @route('/events', method='POST')
@@ -70,6 +95,7 @@ def events():
         return {"error": "Unhandled repo %s" % repository}
 
     if event == 'ping':
+        print('Success: got a ping from github!')
         return {'response': 'pong'}
     elif event == 'push':
         p = Process(target=handle_push, args=(json,))
@@ -88,6 +114,7 @@ def main():
     for dir_branch in dir_branches:
         dir_shas = next(os.walk('branches/%s' % dir_branch))[1]
         shas = [{
+            'status': read_status(s),
             'name': s,
             'date': os.path.getmtime('branches/%s/%s' % (dir_branch, s))
         } for s in dir_shas]
