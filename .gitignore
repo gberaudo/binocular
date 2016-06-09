@@ -5,3 +5,4 @@ key.pub
 config.ini
 branches/*
 logs/*.log
+binocular_logs.txt

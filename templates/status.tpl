@@ -27,7 +27,7 @@ oReq.onreadystatechange = function() {
         if (active) follow();
     }
 }
-oReq.open("get", "/logs/{{sha}}.log?embed", true);
+oReq.open("get", "/branches/{{branch}}/{{sha}}_build.log?embed", true);
 oReq.send();
 
 document.addEventListener('wheel', a => { active = false; });

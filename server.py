@@ -11,6 +11,8 @@ import fcntl
 import time
 import configparser
 import html
+import json as JSON
+import logging
 
 
 SCRIPT_DIRNAME = os.path.dirname(os.path.realpath(__file__))
@@ -23,6 +25,14 @@ EVENT_SECRET = config.get('main', 'event_secret')
 DEBUG = config.getboolean('main', 'debug', fallback=False)
 SERVE_BRANCHES = config.getboolean('main', 'serve_branches', fallback=False)
 HANDLE_PUSH_TIMEOUT = config.getint('main', 'handle_push_timeout', fallback=600)
+
+
+def configure_logger(logger):
+    hdlr = logging.FileHandler('binocular_logs.txt')
+    formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s')
+    hdlr.setFormatter(formatter)
+    logger.addHandler(hdlr)
+    logger.setLevel(logging.WARNING)
 
 
 def compare_event_signature():
@@ -38,45 +48,78 @@ def sanitize(str):
     return "".join(c for c in str if c.isalnum() or c in keepcharacters)
 
 
-def write_status(status, sha):
+def write_status(branch, sha, status):
     assert status in ['failed', 'pending', 'success']
-    status_filename = "branches/%s.status" % sha
+    status_filename = "branches/%s/%s.status" % (branch, sha)
     with open(status_filename, "w") as status_file:
         status_file.write(status)
 
 
-def read_status(sha):
-    status_filename = "branches/%s.status" % sha
+def read_status(branch, sha):
+    status_filename = "branches/%s/%s.status" % (branch, sha)
     with open(status_filename, "r") as status_file:
         status = status_file.read()
     assert status in ['failed', 'pending', 'success']
     return status
 
 
+conv = Ansi2HTMLConverter()
+def read_continuously(filename, delay=0.5, timeout=120, to_html=False, sanitize=False):
+    with open(filename, 'r') as f:
+        fd = f.fileno()
+        flag = fcntl.fcntl(fd, fcntl.F_GETFD)
+        fcntl.fcntl(fd, fcntl.F_SETFL, flag | os.O_NONBLOCK)
+        previous_tick = time.monotonic()
+        while True:
+            current_tick = time.monotonic()
+            if current_tick - previous_tick > timeout:  # in seconds
+                return
+
+            new = f.readline()
+            if new:
+                previous_tick = current_tick
+                if to_html:
+                    if sanitize:
+                        new = html.escape(new)
+                    yield(conv.convert(new, full=False))
+                else:
+                    yield(new)
+            else:
+                time.sleep(delay)  # in seconds
+
+
 def handle_push(json):
     log = get_logger()
+    configure_logger(log)
     ref = json['ref'].rsplit('/', 1)[-1]  # refs/heads/branch
     sha = json['after']
     directory = sanitize(ref)
     git_url = json['repository']['ssh_url']
     log.info('Handling push for %s %s -> %s %s', git_url, ref, directory, sha)
 
-    write_status('pending', sha)
+    if not os.path.exists('branches/' + directory):
+        os.makedirs('branches/' + directory)
+    filename = 'branches/%s/%s_event.log' % (directory, sha)
+    with open(filename, 'w') as event_file:
+        event = JSON.dumps(json, sort_keys=True, indent=4, separators=(',', ': '))
+        event_file.write(event)
 
-    filename = "logs/%s.log" % sha
+    write_status(directory, sha, 'pending')
+
+    filename = 'branches/%s/%s_build.log' % (directory, sha)
     open(filename, 'a').close()  # create file
-    with open(filename, "wb") as log_file:
+    with open(filename, 'wb') as log_file:
         try:
             return_code = subprocess.call(
                 ['scripts/handle_push.sh', git_url, directory, sha],
                 stdout=log_file, stderr=subprocess.STDOUT,
                 timeout=HANDLE_PUSH_TIMEOUT)
             if return_code == 0:
-                write_status('success', sha)
+                write_status(directory, sha, 'success')
                 return
         except:
             log.exception('Error in handle_push')
-    write_status('failed', sha)
+    write_status(directory, sha, 'failed')
 
 
 @route('/events', method='POST')
@@ -114,7 +157,7 @@ def main():
     for dir_branch in dir_branches:
         dir_shas = next(os.walk('branches/%s' % dir_branch))[1]
         shas = [{
-            'status': read_status(s),
+            'status': read_status(dir_branch, s),
             'name': s,
             'date': os.path.getmtime('branches/%s/%s' % (dir_branch, s))
         } for s in dir_shas]
@@ -123,34 +166,9 @@ def main():
     return template("templates/list_branches_and_sha", branches=branches)
 
 
-conv = Ansi2HTMLConverter()
-def read_continuously(filename, delay=0.5, timeout=120, to_html=False, sanitize=False):
-    with open(filename, 'r') as f:
-        fd = f.fileno()
-        flag = fcntl.fcntl(fd, fcntl.F_GETFD)
-        fcntl.fcntl(fd, fcntl.F_SETFL, flag | os.O_NONBLOCK)
-        previous_tick = time.monotonic()
-        while True:
-            current_tick = time.monotonic()
-            if current_tick - previous_tick > timeout:  # in seconds
-                return
-
-            new = f.readline()
-            if new:
-                previous_tick = current_tick
-                if to_html:
-                    if sanitize:
-                        new = html.escape(new)
-                    yield(conv.convert(new, full=False))
-                else:
-                    yield(new)
-            else:
-                time.sleep(delay)  # in seconds
-
-
-@route('/logs/<filename>')
-def stream(filename):
-    osfilepath = '%s/logs/%s' % (SCRIPT_DIRNAME, filename)
+@route('/branches/<branch>/<sha>_build.log')
+def stream(branch, sha):
+    osfilepath = '%s/branches/%s/%s_build.log' % (SCRIPT_DIRNAME, branch, sha)
     if not os.path.isfile(osfilepath):
         response.status = '404 Not Found'
         return response
@@ -177,10 +195,10 @@ def serve_static(filepath):
     return static_file(filepath, root='%s/static' % SCRIPT_DIRNAME)
 
 
-@route('/branches/<filepath:path>')
-def serve_branches(filepath):
+@route('/branches/<branch>/<sha>/<filepath:path>')
+def serve_branches(branch, sha, filepath):
     if SERVE_BRANCHES:
-        return static_file(filepath, root='%s/branches' % SCRIPT_DIRNAME)
+        return static_file(filepath, root='%s/branches/%s/%s' % (SCRIPT_DIRNAME, branch, sha))
     else:
         response.status = '403 Unauthorized'
         return {"error": "No statics configured"}
