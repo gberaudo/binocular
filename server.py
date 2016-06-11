@@ -1,6 +1,6 @@
 import subprocess
 from bottle import run, request, response, route, static_file, template
-from multiprocessing import Process, get_logger
+from multiprocessing import Process, get_logger as get_logger_internal
 
 from ansi2html import Ansi2HTMLConverter
 
@@ -20,19 +20,23 @@ SCRIPT_DIRNAME = os.path.dirname(os.path.realpath(__file__))
 config = configparser.ConfigParser()
 config.read('config.ini')
 REPO = config.get('main', 'allowed')
-EVENT_AUTH = config.get('main', 'event_auth')
 EVENT_SECRET = config.get('main', 'event_secret')
 DEBUG = config.getboolean('main', 'debug', fallback=False)
 SERVE_BRANCHES = config.getboolean('main', 'serve_branches', fallback=False)
 HANDLE_PUSH_TIMEOUT = config.getint('main', 'handle_push_timeout', fallback=600)
 
 
-def configure_logger(logger):
-    hdlr = logging.FileHandler('binocular_logs.txt')
-    formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s')
-    hdlr.setFormatter(formatter)
-    logger.addHandler(hdlr)
-    logger.setLevel(logging.WARNING)
+logger = None
+def get_logger():
+    global logger
+    if logger is None:
+        logger = get_logger_internal()
+        hdlr = logging.FileHandler('binocular_logs.txt')
+        formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s')
+        hdlr.setFormatter(formatter)
+        logger.addHandler(hdlr)
+        logger.setLevel(logging.DEBUG if DEBUG else logging.WARNING)
+    return logger
 
 
 def compare_event_signature():
@@ -49,6 +53,7 @@ def sanitize(str):
 
 
 def write_status(branch, sha, status):
+    get_logger().debug('writing status %s %s %s', branch, sha, status)
     assert status in ['failed', 'pending', 'success']
     status_filename = "branches/%s/%s.status" % (branch, sha)
     with open(status_filename, "w") as status_file:
@@ -90,7 +95,6 @@ def read_continuously(filename, delay=0.5, timeout=120, to_html=False, sanitize=
 
 def handle_push(json):
     log = get_logger()
-    configure_logger(log)
     ref = json['ref'].rsplit('/', 1)[-1]  # refs/heads/branch
     sha = json['after']
     directory = sanitize(ref)
@@ -124,8 +128,10 @@ def handle_push(json):
 
 @route('/events', method='POST')
 def events():
+    log = get_logger()
 
     if not compare_event_signature():
+        log.warning('Recevied an event with a bad signature')
         response.status = '403 Unauthorized'
         return {"error": "Bad event signature"}
 
@@ -133,12 +139,13 @@ def events():
     json = request.json
     repository = json['repository']['full_name']
 
+    log.debug('Received an event %s', event)
     if repository != REPO:
         response.status = '403 Unauthorized'
         return {"error": "Unhandled repo %s" % repository}
 
     if event == 'ping':
-        print('Success: got a ping from github!')
+        log.info('Success: got a ping from github!')
         return {'response': 'pong'}
     elif event == 'push':
         p = Process(target=handle_push, args=(json,))
@@ -163,7 +170,7 @@ def main():
         } for s in dir_shas]
 
         branches.append({'name': dir_branch, 'shas': shas})
-    return template("templates/list_branches_and_sha", branches=branches)
+    return template("config/templates/list_branches_and_sha", branches=branches)
 
 
 @route('/branches/<branch>/<sha>_build.log')
@@ -206,7 +213,7 @@ def serve_branches(branch, sha, filepath):
 
 @route('/status/<branch>/<sha>')
 def status(branch, sha):
-    return template("templates/status.tpl", branch=branch, sha=sha)
+    return template("config/templates/status.tpl", branch=branch, sha=sha)
 
 
 run(host='0.0.0.0', server="paste", port=8080, debug=DEBUG)

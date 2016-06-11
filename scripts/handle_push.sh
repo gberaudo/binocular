@@ -1,8 +1,15 @@
 #!/bin/sh
 
-set -x
 set -e
 
+if [ ! $# -eq 3 ]
+then
+  echo "wrong number of arguments: $*"
+  echo "Usage $0 <git_url> <branch> <sha>"
+  exit 1
+fi
+
+set -x
 git_url=$1
 branch=$2
 sha=$3
@@ -17,4 +24,4 @@ git reset --hard $sha
 
 # Build the project
 cd -
-./handle_build_custom.sh $directory
+config/handle_build_custom.sh $directory

@@ -42,6 +42,8 @@ Managers, clients can check the changes and quicly compare versions.
 # Howto
 
 - Fork and clone this repository;
+- Copy config.ini.example to config.ini and adapt to your project;
+- Copy configurations/helloworld to configurations/your\_project and update symlink with rm config; ln -s configurations/your\_project config;
 - Call `make run` and follow instructions;
 - Implement the build hook;
 - Call `make run` to launch the Binocular server.

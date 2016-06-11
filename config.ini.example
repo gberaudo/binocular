@@ -1,0 +1,16 @@
+[main]
+
+# Arbitrary secret used to authentication calls from github
+event_secret=f9cde2cf-8f4e-416f-b1bb-31738d24e775
+
+# Whether to print additional debug information
+debug=True
+
+# Github repository, like user/project or organization/project
+allowed=gberaudo/ol3-cesium
+
+# Maximum number of seconds to handle the push request received from github
+handle_push_timeout=600
+
+# Whether to serve the repository cloned from github
+server_branches=False

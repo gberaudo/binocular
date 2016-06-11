@@ -21,16 +21,19 @@ key key.pub:
 
 .key_configured_timestamp: config.ini key.pub
 	@echo
+	@echo "If your repository is private, you need an asymetric deploy key pair to clone from github"
 	@echo "\033[1;34mOpen https://github.com/$(shell grep allowed config.ini | cut -f2 -d=)/settings/keys and add following deploy key\033[0m"
 	cat key.pub
 	@read -r -p "Press enter when done" unused
 	@touch $@
 
-config.ini: .venv/bin/python3
-	scripts/configure.sh
+config.ini:
+	@echo "Please configure a project as explained in README.md"
+	@exit 1
 
 .configured_timestamp: config.ini
 	@echo
+	@echo "In order for github to notify binocular of events occuring your repository you need to setup the public URL to binocular"
 	@echo "\033[1;34mOpen https://github.com/$(shell grep allowed config.ini | cut -f2 -d=)/settings/hooks and add following (adapted) webhook\033[0m"
 	@echo "http<s>://server_public_hostname_and_port/events (current server) with secret $(shell grep event_secret config.ini | cut -f2 -d=)"
 	@read -r -p "Press enter when done" unused
