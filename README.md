@@ -11,20 +11,18 @@ single github repository.
 Reviewers get access to a running instance where they can visualize and experiment.
 Managers, clients can check the changes and quicly compare versions.
 
-## Principle
-
-- Github posts an HTTP request to the Binocular server;
-- If authorized, the repository is cloned and a build is triggered according to customizable scripts:
-- The build log and demo are made avaiable.
-
 ## Features
 
-- Work with private repositories using deploy keys;
-- No dependency on Docker.
+- Receive repository events posted by github;
+- Clone public and private repositories using deploy keys;
+- Usable with or without Docker;
+- Display the list of builds per branch with their status/log and link to demo;
+- Statically serve demos.
 
-## Limitations
+## Features to investigate
 
-- The URL to the demo and build status are not made available on github;
+- Attach [status](https://developer.github.com/v3/repos/statuses/) to commit in github;
+- Update PR thread with comments containing a link to deployed demo.
 
 # Security
 
