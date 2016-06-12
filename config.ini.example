@@ -6,6 +6,9 @@ event_secret=f9cde2cf-8f4e-416f-b1bb-31738d24e775
 # Whether to print additional debug information
 debug=True
 
+# Whether exceptions should be catched by Bottle (True to disable catching)
+disable_bottle_error_handling=False
+
 # Github repository, like user/project or organization/project
 allowed=gberaudo/ol3-cesium
 

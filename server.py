@@ -1,5 +1,5 @@
-import subprocess
-from bottle import run, request, response, route, static_file, template
+import bottle
+from bottle import request, response, route, static_file, template
 from multiprocessing import Process, get_logger as get_logger_internal
 
 from ansi2html import Ansi2HTMLConverter
@@ -9,11 +9,20 @@ import hmac
 import os
 import fcntl
 import time
-import configparser
-import html
 import json as JSON
 import logging
 
+import sys
+PY3 = sys.version_info[0] == 3
+
+if PY3:
+    import configparser
+    import subprocess
+    from time import monotonic
+else:
+    import subprocess32 as subprocess
+    from monotonic import monotonic
+    from backports import configparser
 
 SCRIPT_DIRNAME = os.path.dirname(os.path.realpath(__file__))
 
@@ -24,6 +33,7 @@ EVENT_SECRET = config.get('main', 'event_secret')
 DEBUG = config.getboolean('main', 'debug', fallback=False)
 SERVE_BRANCHES = config.getboolean('main', 'serve_branches', fallback=False)
 HANDLE_PUSH_TIMEOUT = config.getint('main', 'handle_push_timeout', fallback=600)
+DISABLE_BOTTLE_ERROR_HANDLING = config.getboolean('main', 'disable_bottle_error_handling', fallback=False)
 
 
 logger = None
@@ -41,7 +51,7 @@ def get_logger():
 
 def compare_event_signature():
     receive_signature = request.environ['HTTP_X_HUB_SIGNATURE']
-    secret = str.encode(EVENT_SECRET)
+    secret = str.encode(EVENT_SECRET) if PY3 else str(EVENT_SECRET)
     payload = request.body.read()
     computed_sha1 = hmac.new(secret, payload, hashlib.sha1).hexdigest()
     return hmac.compare_digest(receive_signature, 'sha1=%s' % computed_sha1)
@@ -68,29 +78,32 @@ def read_status(branch, sha):
     return status
 
 
-conv = Ansi2HTMLConverter()
-def read_continuously(filename, delay=0.5, timeout=120, to_html=False, sanitize=False):
-    with open(filename, 'r') as f:
-        fd = f.fileno()
-        flag = fcntl.fcntl(fd, fcntl.F_GETFD)
-        fcntl.fcntl(fd, fcntl.F_SETFL, flag | os.O_NONBLOCK)
-        previous_tick = time.monotonic()
-        while True:
-            current_tick = time.monotonic()
-            if current_tick - previous_tick > timeout:  # in seconds
-                return
+conv = Ansi2HTMLConverter(escaped=False)
+def read_continuously(filename, delay=0.5, timeout=120, to_html=False):
+    try:
+        with open(filename, 'r') as f:
+            fd = f.fileno()
+            flag = fcntl.fcntl(fd, fcntl.F_GETFD)
+            fcntl.fcntl(fd, fcntl.F_SETFL, flag | os.O_NONBLOCK)
+            previous_tick = monotonic()
+            while True:
+                current_tick = monotonic()
+                if current_tick - previous_tick > timeout:  # in seconds
+                    return
 
-            new = f.readline()
-            if new:
-                previous_tick = current_tick
-                if to_html:
-                    if sanitize:
-                        new = html.escape(new)
-                    yield(conv.convert(new, full=False))
+                new = f.readline()
+                if new:
+                    previous_tick = current_tick
+                    if to_html:
+                        html = conv.convert(new, full=False)
+                        yield(html)
+                    else:
+                        yield(new)
                 else:
-                    yield(new)
-            else:
-                time.sleep(delay)  # in seconds
+                    time.sleep(delay)  # in seconds
+    except:
+        get_logger().exception('Error reading %s', filename)
+        raise
 
 
 def handle_push(json):
@@ -180,7 +193,7 @@ def stream(branch, sha):
         response.status = '404 Not Found'
         return response
 
-    main_generator = read_continuously(osfilepath, to_html=True, sanitize=False, timeout=122)
+    main_generator = read_continuously(osfilepath, to_html=True, timeout=122)
 
     def full_generator():
             yield('<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd">')
@@ -216,4 +229,7 @@ def status(branch, sha):
     return template("config/templates/status.tpl", branch=branch, sha=sha)
 
 
-run(host='0.0.0.0', server="paste", port=8080, debug=DEBUG)
+if DISABLE_BOTTLE_ERROR_HANDLING:
+    bottle.default_app().catchall = False
+
+bottle.run(host='0.0.0.0', port=8080, debug=DEBUG)

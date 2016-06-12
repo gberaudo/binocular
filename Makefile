@@ -1,11 +1,15 @@
-.venv/bin/python3 .venv/bin/pip:
-	pyvenv .venv
+PYTHON_VENV = $(shell which pyvenv > /dev/null  && echo pyvenv || echo virtualenv)
+PYTHON_REQUIREMENTS = $(shell which pyvenv > /dev/null  && echo "-r requirements.txt" || echo "-r requirements.txt -r requirements_python2.txt")
+
+
+.venv/bin/python .venv/bin/pip:
+	$(PYTHON_VENV) .venv
 	.venv/bin/pip install wheel
 
 .venv/bin/flake8: .requirements_timestamp
 
 .requirements_timestamp: .venv/bin/pip requirements.txt
-	.venv/bin/pip install -r requirements.txt
+	.venv/bin/pip install $(PYTHON_REQUIREMENTS)
 	@touch $@
 
 flake8: .venv/bin/flake8
@@ -13,7 +17,7 @@ flake8: .venv/bin/flake8
 
 .PHONY:
 run: .requirements_timestamp flake8 config.ini .key_configured_timestamp .configured_timestamp
-	.venv/bin/python3 server.py
+	.venv/bin/python server.py
 
 key key.pub:
 	@echo "Generating deploy keys"
@@ -41,7 +45,7 @@ config.ini:
 
 .PHONY:
 clean:
-	rm .*_timestamp
+	-rm .*_timestamp
 
 .PHONY:
 cleanall: clean

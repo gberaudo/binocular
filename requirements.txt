@@ -2,4 +2,4 @@ wheel
 bottle
 flake8
 ipdb
-git+https://github.com/gberaudo/ansi2html.git@fix_single_line_with_cursor_move_up
+git+https://github.com/ralphbean/ansi2html.git@9a324ad7ccead19f39c870071b7d11547f259dc4
